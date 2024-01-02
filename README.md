@@ -8,7 +8,7 @@
 
 编译请加入 ```with_outbound_provider```
 
-#### 配置实例
+#### 配置详解
 
 ```json5
 {
@@ -39,6 +39,7 @@
       "update_interval": "", // 自动更新间隔，Golang Duration 格式，默认为空，不自动更新
       "request_timeout": "", // HTTP 请求的超时时间
       "http3": false, // 使用 HTTP/3 请求
+      "headers": {}, // HTTP Header 头，键值对
       "selector": { // 暴露的同名 Selector Outbound 配置
         // 与 Selector Outbound 配置一致
       },
@@ -97,6 +98,111 @@
     "type": "selector", // 使用 Selector 分组
     // "outbounds": [], 筛选的 Outbound 会自动添加到 Outbounds 中
   }
+}
+```
+
+#### 示例配置
+
+```json5
+{
+  "log": {
+    "timestamp": true,
+    "level": "info"
+  },
+  "experimental": {
+    "cache_file": { // 开启缓存，缓存 Outbound Provider 数据
+      "enabled": true,
+      "path": "/etc/sing-box-cache.db"
+    }
+  },
+  "outbounds": [
+    {
+      "tag": "direct-out",
+      "type": "direct"
+    },
+    {
+      "tag": "proxy-out",
+      "type": "selector",
+      "outbounds": [
+        "sub"
+      ]
+    }
+  ],
+  "outbound_providers": [
+    {
+      "tag": "sub",
+      "url": "http://example.com", // 订阅链接
+      "update_interval": "24h",
+      "actions": [
+        {
+          "type": "filter",
+          "rules": [
+            "剩余",
+            "过期",
+            "更多"
+          ]
+        },
+        {
+          "type": "group",
+          "rules": [
+            "香港",
+            "Hong Kong",
+            "HK"
+          ],
+          "outbound": {
+            "tag": "sub - HK",
+            "type": "selector"
+          }
+        }
+      ],
+      "detour": "direct-out",
+      "selector": {
+        "default": "sub - HK"
+      }
+    }
+  ],
+  "route": {
+    "rule_set": [
+      {
+        "tag": "geosite-cn",
+        "type": "remote",
+        "url": "https://github.com/SagerNet/sing-geosite/raw/rule-set/geosite-cn.srs",
+        "update_interval": "24h",
+        "download_detour": "sub"
+      },
+      {
+        "tag": "geoip-cn",
+        "type": "remote",
+        "url": "https://github.com/SagerNet/sing-geoip/raw/rule-set/geoip-cn.srs",
+        "update_interval": "24h",
+        "download_detour": "sub"
+      }
+    ],
+    "rules": [
+      {
+        "rule_set": [
+          "geosite-cn",
+          "geoip-cn"
+        ],
+        "outbound": "direct-out"
+      },
+      {
+        "inbound": [
+          "mixed-in"
+        ],
+        "outbound": "sub"
+      }
+    ]
+  },
+  "inbounds": [
+    {
+      "tag": "mixed-in",
+      "type": "mixed",
+      "listen": "::",
+      "listen_port": 2080,
+      "sniff": true
+    }
+  ]
 }
 ```
 
