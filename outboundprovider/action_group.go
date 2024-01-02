@@ -80,9 +80,23 @@ func (a *actionGroup) apply(_ context.Context, _ adapter.Router, logger log.Cont
 	outbound := a.outbound
 	switch outbound.Type {
 	case C.TypeSelector:
-		outbound.SelectorOptions.Outbounds = outbounds
+		if len(outbound.SelectorOptions.Outbounds) > 0 {
+			oldOutbounds := outbound.SelectorOptions.Outbounds
+			outbound.SelectorOptions.Outbounds = make([]string, 0, len(oldOutbounds)+len(outbounds))
+			outbound.SelectorOptions.Outbounds = append(outbound.SelectorOptions.Outbounds, oldOutbounds...)
+			outbound.SelectorOptions.Outbounds = append(outbound.SelectorOptions.Outbounds, outbounds...)
+		} else {
+			outbound.SelectorOptions.Outbounds = outbounds
+		}
 	case C.TypeURLTest:
-		outbound.URLTestOptions.Outbounds = outbounds
+		if len(outbound.URLTestOptions.Outbounds) > 0 {
+			oldOutbounds := outbound.URLTestOptions.Outbounds
+			outbound.URLTestOptions.Outbounds = make([]string, 0, len(oldOutbounds)+len(outbounds))
+			outbound.URLTestOptions.Outbounds = append(outbound.URLTestOptions.Outbounds, oldOutbounds...)
+			outbound.URLTestOptions.Outbounds = append(outbound.URLTestOptions.Outbounds, outbounds...)
+		} else {
+			outbound.URLTestOptions.Outbounds = outbounds
+		}
 	}
 	processor.AddGroupOutbound(outbound)
 	logger.Debug("add group outbound: ", outbound.Tag)
