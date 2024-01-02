@@ -32,11 +32,6 @@ func (s *Box) startOutboundsAndOutboundProviders() error {
 			if dpNode == nil {
 				dpNode = datastructure.NewGraphNode[string, adapter.Outbound](dependency, nil)
 				outboundGraph.AddNode(dpNode)
-			} else {
-				data := dpNode.Data()
-				if data != nil {
-					return E.New("outbound [", dependency, "] already exists")
-				}
 			}
 			dpNode.AddNext(node)
 			node.AddPrev(dpNode)
@@ -104,11 +99,6 @@ func (s *Box) startOutboundsAndOutboundProviders() error {
 					if dpNode == nil {
 						dpNode = datastructure.NewGraphNode[string, adapter.Outbound](dependency, nil)
 						outboundGraph.AddNode(dpNode)
-					} else if dpNode.Data() != nil {
-						_, loaded := provider.Outbound(dependency)
-						if !loaded {
-							return E.New("outbound [", dependency, "] already exists")
-						}
 					}
 					dpNode.AddNext(outNode)
 					outNode.AddPrev(dpNode)

@@ -84,6 +84,7 @@ type OutboundProvider struct {
 	loopCtx              context.Context
 	loopCancel           context.CancelFunc
 	loopCloseDone        chan struct{}
+	started              bool
 }
 
 func New(ctx context.Context, router adapter.Router, logFactory log.Factory, logger log.ContextLogger, tag string, options option.OutboundProvider) (adapter.OutboundProvider, error) {
@@ -186,7 +187,7 @@ func (p *OutboundProvider) Start() error {
 }
 
 func (p *OutboundProvider) Close() error {
-	if p.updateInterval > 0 {
+	if p.updateInterval > 0 && p.loopCancel != nil {
 		p.loopCancel()
 		<-p.loopCloseDone
 		close(p.loopCloseDone)
