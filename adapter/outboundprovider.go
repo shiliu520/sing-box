@@ -13,6 +13,7 @@ type OutboundProvider interface {
 	DependentOutbound() string
 	Outbounds() []Outbound
 	Outbound(tag string) (Outbound, bool)
+	BasicOutbounds() []Outbound
 	Update()
 	HealthCheck()
 	GetSubsctibeData() OutboundProviderSubscribeData

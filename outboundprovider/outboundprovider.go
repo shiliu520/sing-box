@@ -79,6 +79,7 @@ type OutboundProvider struct {
 	cacheData            adapter.OutboundProviderData
 	outbounds            []adapter.Outbound
 	outboundByTag        map[string]adapter.Outbound
+	basicOutoundLen      int
 	updateLock           sync.Mutex
 	loopCtx              context.Context
 	loopCancel           context.CancelFunc
@@ -160,7 +161,7 @@ func (p *OutboundProvider) PreStart() error {
 		}
 	}
 	p.cacheData = data
-	outbounds, err := p.newOutbounds(data.Outbounds)
+	outbounds, basicOutboundLen, err := p.newOutbounds(data.Outbounds)
 	p.cacheData.Outbounds = nil
 	if err != nil {
 		return E.Cause(err, "create outbounds failed")
@@ -169,6 +170,7 @@ func (p *OutboundProvider) PreStart() error {
 	for _, outbound := range outbounds {
 		outboundByTag[outbound.Tag()] = outbound
 	}
+	p.basicOutoundLen = basicOutboundLen
 	p.outbounds = outbounds
 	p.outboundByTag = outboundByTag
 	return nil
@@ -194,6 +196,10 @@ func (p *OutboundProvider) Close() error {
 
 func (p *OutboundProvider) Outbounds() []adapter.Outbound {
 	return p.outbounds
+}
+
+func (p *OutboundProvider) BasicOutbounds() []adapter.Outbound {
+	return p.outbounds[:p.basicOutoundLen]
 }
 
 func (p *OutboundProvider) Outbound(tag string) (adapter.Outbound, bool) {
@@ -273,13 +279,13 @@ func (p *OutboundProvider) HealthCheck() {
 	}
 }
 
-func (p *OutboundProvider) newOutbounds(outboundOptions []option.Outbound) ([]adapter.Outbound, error) {
+func (p *OutboundProvider) newOutbounds(outboundOptions []option.Outbound) ([]adapter.Outbound, int, error) { // basicOutboundLen
 	processor := newProcessor(outboundOptions)
 	var err error
 	for i, action := range p.actions {
 		err = action.apply(p.ctx, p.router, p.logger, processor)
 		if err != nil {
-			return nil, E.Cause(err, "apply action[", i, "] failed")
+			return nil, 0, E.Cause(err, "apply action[", i, "] failed")
 		}
 	}
 	outboundOptions = processor.Build()
@@ -307,7 +313,7 @@ func (p *OutboundProvider) newOutbounds(outboundOptions []option.Outbound) ([]ad
 			outboundOptions.Tag,
 			outboundOptions)
 		if err != nil {
-			return nil, E.Cause(err, "parse outbound[", i, "]")
+			return nil, 0, E.Cause(err, "parse outbound[", i, "]")
 		}
 		outbounds = append(outbounds, out)
 	}
@@ -319,10 +325,10 @@ func (p *OutboundProvider) newOutbounds(outboundOptions []option.Outbound) ([]ad
 		globalOutboundOptions.Tag,
 		globalOutboundOptions)
 	if err != nil {
-		return nil, E.Cause(err, "parse global outbound[", globalOutboundOptions.Tag, "]")
+		return nil, 0, E.Cause(err, "parse global outbound[", globalOutboundOptions.Tag, "]")
 	}
 	outbounds = append(outbounds, globalOutbound)
-	return outbounds, nil
+	return outbounds, len(processor.BasicOutbounds()), nil
 }
 
 func (p *OutboundProvider) loopUpdate() {

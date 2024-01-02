@@ -60,6 +60,10 @@ func (n *GraphNode[K, T]) RemoveNext(next *GraphNode[K, T]) {
 	}
 }
 
+func ToAnyNode[K comparable, T any](node *GraphNode[K, T]) *GraphNode[K, any] {
+	return NewGraphNode[K, any](node.id, node.data)
+}
+
 type Graph[K comparable, T any] struct {
 	nodes map[K]*GraphNode[K, T]
 }

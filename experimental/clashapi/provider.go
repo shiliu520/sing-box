@@ -101,7 +101,7 @@ func proxyProviderInfo(server *Server, router adapter.Router, provider adapter.O
 	subscriptionInfo["Expire"] = subscribeData.Expire.Unix()
 	info.Put("subscriptionInfo", subscriptionInfo)
 	info.Put("updatedAt", subscribeData.Update)
-	outbounds := provider.Outbounds()
+	outbounds := provider.BasicOutbounds()
 	proxies := make([]*badjson.JSONObject, 0, len(outbounds))
 	for _, out := range outbounds {
 		proxies = append(proxies, proxyInfo(server, out))

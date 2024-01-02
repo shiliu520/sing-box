@@ -27,6 +27,14 @@ func (p *processor) initGroup() {
 	}
 }
 
+func (p *processor) BasicOutbounds() []option.Outbound {
+	return p.outbounds
+}
+
+func (p *processor) GroupOutbounds() []option.Outbound {
+	return p.groupOutbounds
+}
+
 func (p *processor) Build() []option.Outbound {
 	outbounds := make([]option.Outbound, 0, len(p.outbounds)+len(p.groupOutbounds))
 	outbounds = append(outbounds, p.outbounds...)

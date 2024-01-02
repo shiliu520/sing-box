@@ -1,7 +1,6 @@
 package box
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -13,202 +12,150 @@ import (
 )
 
 func (s *Box) startOutboundsAndOutboundProviders() error {
-	graph := datastructure.NewGraph[string, any]()
-	startedOutboundMap := make(map[string]adapter.Outbound)
+	outboundGraph := datastructure.NewGraph[string, adapter.Outbound]()
+	startedOutboundMap := make(map[string]bool)
+	startedProviderMap := make(map[string]bool)
 	for _, out := range s.outbounds {
-		_, isStarter := out.(common.Starter)
-		if !isStarter {
-			startedOutboundMap[out.Tag()] = out
-			continue
-		}
-		// Add To Graph
-		// Check Duplicate
-		node := graph.GetNode(graphOutboundTag(out.Tag()))
-		if node != nil {
-			// Maybe Ghost Outbound
+		node := outboundGraph.GetNode(out.Tag())
+		if node == nil {
+			node = datastructure.NewGraphNode[string, adapter.Outbound](out.Tag(), out)
+			outboundGraph.AddNode(node)
+		} else {
 			data := node.Data()
 			if data != nil {
-				return E.New("outbound/", out.Type(), "[", out.Tag(), "] already exists")
+				return E.New("outbound [", out.Tag(), "] already exists")
 			}
-		} else {
-			node = datastructure.NewGraphNode[string, any](graphOutboundTag(out.Tag()), out)
-			graph.AddNode(node)
+			node.SetData(out)
 		}
-		// Dependencies
-		dependencies := out.Dependencies()
-		for _, dependency := range dependencies {
-			// Check is unstart Outbound
-			_, loaded := startedOutboundMap[dependency]
-			if loaded {
-				continue
-			}
-			// Search Graph
-			dpNode := graph.GetNode(graphOutboundTag(dependency))
+		for _, dependency := range out.Dependencies() {
+			dpNode := outboundGraph.GetNode(dependency)
 			if dpNode == nil {
-				// Maybe Ghost Outbound
-				dpNode = datastructure.NewGraphNode[string, any](graphOutboundTag(dependency), nil)
-				graph.AddNode(dpNode)
+				dpNode = datastructure.NewGraphNode[string, adapter.Outbound](dependency, nil)
+				outboundGraph.AddNode(dpNode)
+			} else {
+				data := dpNode.Data()
+				if data != nil {
+					return E.New("outbound [", dependency, "] already exists")
+				}
 			}
 			dpNode.AddNext(node)
 			node.AddPrev(dpNode)
 		}
 	}
 	for _, provider := range s.outboundProviders {
-		// Add To Graph
-		// Check Duplicate
-		node := graph.GetNode(graphOutboundProviderTag(provider.Tag()))
-		if node != nil {
-			return E.New("outbound-provider[", provider.Tag(), "] already exists")
-		} else {
-			node = datastructure.NewGraphNode[string, any](graphOutboundProviderTag(provider.Tag()), provider)
-			graph.AddNode(node)
+		_, loaded := startedProviderMap[provider.Tag()]
+		if loaded {
+			return E.New("outbound-provider [", provider.Tag(), "] already exists")
 		}
+		startedProviderMap[provider.Tag()] = false
 		dependentOutbound := provider.DependentOutbound()
 		if dependentOutbound != "" {
-			// Check is unstart Outbound
-			_, loaded := startedOutboundMap[dependentOutbound]
-			if !loaded {
-				// Search Graph
-				dpNode := graph.GetNode(graphOutboundTag(dependentOutbound))
-				if dpNode == nil {
-					// Maybe Ghost Outbound
-					dpNode = datastructure.NewGraphNode[string, any](graphOutboundTag(dependentOutbound), nil)
-					graph.AddNode(dpNode)
-				}
-				dpNode.AddNext(node)
-				node.AddPrev(dpNode)
+			outNode := outboundGraph.GetNode(dependentOutbound)
+			if outNode == nil {
+				outNode = datastructure.NewGraphNode[string, adapter.Outbound](dependentOutbound, nil)
+				outboundGraph.AddNode(outNode)
 			}
 		}
 	}
-	queue := datastructure.NewQueue[*datastructure.GraphNode[string, any]]()
+	outboundQueue := datastructure.NewQueue[*datastructure.GraphNode[string, adapter.Outbound]]()
+	providerQueue := datastructure.NewQueue[adapter.OutboundProvider]()
 	monitor := taskmonitor.New(s.logger, C.DefaultStartTimeout)
 	for {
-		for queue.Len() > 0 {
-			node := queue.Pop()
-			data := node.Data()
-			switch out := data.(type) {
-			case adapter.Outbound:
-				monitor.Start("initialize outbound/", out.Type(), "[", out, "]")
-				err := out.(common.Starter).Start()
+		for outboundQueue.Len() > 0 {
+			node := outboundQueue.Pop()
+			out := node.Data()
+			starter, isStarter := out.(common.Starter)
+			if isStarter {
+				monitor.Start("initialize outbound/", out.Type(), "[", out.Tag(), "]")
+				err := starter.Start()
 				monitor.Finish()
 				if err != nil {
 					return E.Cause(err, "initialize outbound/", out.Type(), "[", out.Tag(), "]")
 				}
-				startedOutboundMap[out.Tag()] = out
-			case adapter.OutboundProvider:
-				monitor.Start("pre-start outbound-provider[", out.Tag(), "]")
-				err := out.PreStart()
-				monitor.Finish()
-				if err != nil {
-					return E.Cause(err, "pre-start outbound-provider[", out.Tag(), "]")
-				}
-				outbounds := out.Outbounds()
-				for _, outbound := range outbounds {
-					_, isStarter := outbound.(common.Starter)
-					if !isStarter {
-						// Check Duplicate
-						_, loaded := startedOutboundMap[outbound.Tag()]
-						if loaded {
-							return E.New("outbound/", outbound.Type(), "[", outbound.Tag(), "] already exists")
-						}
-						startedOutboundMap[outbound.Tag()] = outbound
-						continue
-					}
-					outboundNode := graph.GetNode(graphOutboundTag(outbound.Tag()))
-					if outboundNode == nil {
-						outboundNode = datastructure.NewGraphNode[string, any](graphOutboundTag(outbound.Tag()), outbound)
-						graph.AddNode(outboundNode)
-					} else {
-						// Check Duplicate
-						if outboundNode.Data() != nil {
-							return E.New("outbound/", outbound.Type(), "[", outbound.Tag(), "] already exists")
-						}
-						// Maybe Ghost Outbound: SetData
-						outboundNode.SetData(outbound)
-					}
-					dependencies := outbound.Dependencies()
-					if len(dependencies) == 0 {
-						queue.Push(outboundNode)
-						continue
-					}
-					for _, dependency := range dependencies {
-						// Check is unstart Outbound
-						_, loaded := startedOutboundMap[dependency]
-						if loaded {
-							continue
-						}
-						// Search Graph
-						dpNode := graph.GetNode(graphOutboundTag(dependency))
-						if dpNode == nil {
-							// Maybe Ghost Outbound
-							dpNode = datastructure.NewGraphNode[string, any](graphOutboundTag(dependency), nil)
-							graph.AddNode(dpNode)
-						}
-						dpNode.AddNext(outboundNode)
-						outboundNode.AddPrev(dpNode)
-					}
-				}
-				graph.RemoveNode(node.ID())
 			}
+			startedOutboundMap[out.Tag()] = true
 			for _, next := range node.Next() {
 				next.RemovePrev(node)
 			}
 		}
-		for _, node := range graph.NodeMap() {
-			if len(node.Prev()) == 0 && node.Data() != nil {
-				if strings.HasPrefix(node.ID(), "outbound-") {
-					tag := strings.TrimPrefix(node.ID(), "outbound-")
-					_, loaded := startedOutboundMap[tag]
-					if loaded {
-						continue
+		for providerQueue.Len() > 0 {
+			provider := providerQueue.Pop()
+			monitor.Start("pre-start outbound-provider[", provider.Tag(), "]")
+			err := provider.PreStart()
+			monitor.Finish()
+			if err != nil {
+				return E.Cause(err, "pre-start outbound-provider[", provider.Tag(), "]")
+			}
+			outbounds := provider.Outbounds()
+			for _, outbound := range outbounds {
+				outNode := outboundGraph.GetNode(outbound.Tag())
+				if outNode == nil {
+					outNode = datastructure.NewGraphNode[string, adapter.Outbound](outbound.Tag(), outbound)
+					outboundGraph.AddNode(outNode)
+				} else {
+					data := outNode.Data()
+					if data != nil {
+						return E.New("outbound [", outbound.Tag(), "] already exists")
 					}
+					outNode.SetData(outbound)
 				}
-				queue.Push(node)
+				for _, dependency := range outbound.Dependencies() {
+					dpNode := outboundGraph.GetNode(dependency)
+					if dpNode == nil {
+						dpNode = datastructure.NewGraphNode[string, adapter.Outbound](dependency, nil)
+						outboundGraph.AddNode(dpNode)
+					} else if dpNode.Data() != nil {
+						_, loaded := provider.Outbound(dependency)
+						if !loaded {
+							return E.New("outbound [", dependency, "] already exists")
+						}
+					}
+					dpNode.AddNext(outNode)
+					outNode.AddPrev(dpNode)
+				}
+			}
+			startedProviderMap[provider.Tag()] = true
+		}
+		for _, node := range outboundGraph.NodeMap() {
+			if len(node.Prev()) == 0 && node.Data() != nil {
+				if !startedOutboundMap[node.ID()] {
+					outboundQueue.Push(node)
+				}
 			}
 		}
-		if queue.Len() == 0 {
+		for _, provider := range s.outboundProviders {
+			if startedProviderMap[provider.Tag()] {
+				continue
+			}
+			dpOut := provider.DependentOutbound()
+			if dpOut == "" {
+				providerQueue.Push(provider)
+			} else {
+				if startedOutboundMap[dpOut] {
+					providerQueue.Push(provider)
+				}
+			}
+		}
+		if outboundQueue.Len() == 0 && providerQueue.Len() == 0 {
 			break
 		}
 	}
-	circles := graph.FindCircle()
-	if len(circles) > 0 {
-		// Print First
-		firstCircle := circles[0]
-		var s string
-		for _, id := range firstCircle {
-			var ss string
-			switch {
-			case strings.HasPrefix(id, "outbound-"):
-				ss = fmt.Sprintf("outbound[%s]", strings.TrimPrefix(id, "outbound-"))
-			case strings.HasPrefix(id, "outbound-provider-"):
-				ss = fmt.Sprintf("outbound-provider[%s]", strings.TrimPrefix(id, "outbound-provider-"))
+	if len(startedOutboundMap) != len(outboundGraph.NodeMap()) {
+		circles := outboundGraph.FindCircle()
+		if len(circles) > 0 {
+			firstCircle := circles[0]
+			for i := range firstCircle {
+				firstCircle[i] = "outbound[" + firstCircle[i] + "]"
 			}
-			s += ss + " -> "
+			s := strings.Join(firstCircle, " -> ")
+			s += " -> outbound[" + firstCircle[0] + "]"
+			return E.New("outbound circle found: ", s)
 		}
-		switch {
-		case strings.HasPrefix(firstCircle[0], "outbound-"):
-			s = fmt.Sprintf("outbound[%s] -> ", strings.TrimPrefix(firstCircle[0], "outbound-")) + s
-		case strings.HasPrefix(firstCircle[0], "outbound-provider-"):
-			s = fmt.Sprintf("outbound-provider[%s] -> ", strings.TrimPrefix(firstCircle[0], "outbound-provider-")) + s
+		for _, node := range outboundGraph.NodeMap() {
+			if node.Data() == nil {
+				return E.New("outbound [", node.ID(), "] not found")
+			}
 		}
-		return E.New("circular dependency: ", s)
-	}
-	// Maybe Ghost Outbound
-	for _, node := range graph.NodeMap() {
-		if node.Data() != nil {
-			continue
-		}
-		id := node.ID()
-		outTag := strings.TrimPrefix(id, "outbound-")
-		return E.New("outbound [", outTag, "] not found")
 	}
 	return nil
-}
-
-func graphOutboundTag(s string) string {
-	return "outbound-" + s
-}
-
-func graphOutboundProviderTag(s string) string {
-	return "outbound-provider-" + s
 }
