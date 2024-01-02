@@ -99,3 +99,7 @@
   }
 }
 ```
+
+### Rule Provider Clash API
+
+```RuleSet``` 适配了 ```Clash API```
