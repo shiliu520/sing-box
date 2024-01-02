@@ -101,6 +101,21 @@
 }
 ```
 
+##### 4. SetDialer
+
+对 ```Outbound``` 进行筛选修改 ```Dial``` 配置
+```json5
+{
+  "type": "setdialer",
+  "rules": [], // Golang 正则表达式，匹配到的 Outbound 会被执行操作
+  "black_mode": false, // 黑名单模式，没有匹配到的 Outbound 才会被执行操作
+  "dialer": {
+    "set_$tag": ..., // 以 set_ 开头，覆写原配置 $tag 项，覆写注意值类型
+    "del_$tag": null // 以 del_ 开头，删除原配置 $tag 项，键值任意
+  }
+}
+```
+
 #### 示例配置
 
 ```json5
