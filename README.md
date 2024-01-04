@@ -40,6 +40,7 @@
       "request_timeout": "", // HTTP 请求的超时时间
       "http3": false, // 使用 HTTP/3 请求
       "headers": {}, // HTTP Header 头，键值对
+      "optimize": false, // 自动优化
       "selector": { // 暴露的同名 Selector Outbound 配置
         // 与 Selector Outbound 配置一致
       },
@@ -59,6 +60,23 @@
 
 ```action``` 提供强大的对 ```Outbound``` 配置的自定义需求，```action``` 可以定义多个，按顺序执行，目前有以下操作：
 
+###### 全局文档 - Rules
+
+```json5
+{
+  "type": "...",
+  "rules": [], // 匹配 Outbound 的规则，具体见下
+  "logical": "or", // 匹配逻辑，要求全部匹配还是任一匹配
+}
+```
+```
+Rules 支持匹配 Tag 或 Type：
+
+1. 若匹配 Tag ，格式：`tag:HK$`，以 `tag:` 开头，后面是 Golang 正则表达式
+2. 若匹配 Type，格式：`type:trojan`，以 `type:` 开头，后面是 Outbound 类型名
+3. 若无 `$*:` 开头，则默认以 `tag:` 开头
+```
+
 ##### 1. Filter
 
 过滤 ```Outbound``` ，建议放置在最前面
@@ -66,8 +84,11 @@
 ```json5
 {
   "type": "filter",
-  "rules": [], // Golang 正则表达式，匹配到的 Outbound 会被剔除
-  "white_mode": false, // 白名单模式，没有匹配到的 Outbound 才会被剔除
+  //
+  "rules": [],
+  "logical": "or", // 默认为 or
+  //
+  "invert": false, // 默认为 false ，对匹配到规则的 Outbound 进行过滤剔除；若为 true ，对未匹配到规则的 Outbound 进行过滤剔除
 }
 ```
 
@@ -78,8 +99,11 @@
 ```json5
 {
   "type": "tagformat",
-  "rules": [], // Golang 正则表达式，匹配到的 Outbound 会被执行操作
-  "black_mode": false, // 黑名单模式，没有匹配到的 Outbound 才会被执行操作
+  //
+  "rules": [],
+  "logical": "or", // 默认为 or
+  //
+  "invert": false, // 默认为 false ，对匹配到规则的 Outbound 进行格式化；若为 true ，对未匹配到规则的 Outbound 进行格式化
   "format": "Sub1 - %s", // 格式化表达式，%s 代表旧的标签名
 }
 ```
@@ -91,12 +115,16 @@
 ```json5
 {
   "type": "group",
-  "rules": [], // Golang 正则表达式，匹配到的 Outbound 会被执行操作
-  "black_mode": false, // 黑名单模式，没有匹配到的 Outbound 才会被执行操作
+  //
+  "rules": [],
+  "logical": "or", // 默认为 or
+  //
+  "invert": false, // 默认为 false ，对匹配到规则的 Outbound 加入分组；若为 true ，对未匹配到规则的 Outbound 加入分组
   "outbound": {
     "tag": "group1",
-    "type": "selector", // 使用 Selector 分组
-    // "outbounds": [], 筛选的 Outbound 会自动添加到 Outbounds 中
+    "type": "selector", // 使用 Selector 分组，也可以使用 URLTest 分组
+    // "outbounds": [], 筛选的 Outbound 会自动添加到 Outbounds 中，可以预附加 Outbound ，造成的预期外问题自负
+    // "default": "" // 仅 Selector 可用，默认为空，可以预附加 Outbound ，造成的预期外问题自负
   }
 }
 ```
@@ -107,8 +135,11 @@
 ```json5
 {
   "type": "setdialer",
-  "rules": [], // Golang 正则表达式，匹配到的 Outbound 会被执行操作
-  "black_mode": false, // 黑名单模式，没有匹配到的 Outbound 才会被执行操作
+  //
+  "rules": [],
+  "logical": "and", // 默认为 and
+  //
+  "invert": false, // 默认为 false ，匹配到的 Outbound 才会被执行操作；若为 true ，没有匹配到的 Outbound 才会被执行操作
   "dialer": {
     "set_$tag": ..., // 以 set_ 开头，覆写原配置 $tag 项，覆写注意值类型
     "del_$tag": null // 以 del_ 开头，删除原配置 $tag 项，键值任意
@@ -181,6 +212,7 @@
       {
         "tag": "geosite-cn",
         "type": "remote",
+        "format": "binary",
         "url": "https://github.com/SagerNet/sing-geosite/raw/rule-set/geosite-cn.srs",
         "update_interval": "24h",
         "download_detour": "sub"
@@ -188,6 +220,7 @@
       {
         "tag": "geoip-cn",
         "type": "remote",
+        "format": "binary",
         "url": "https://github.com/SagerNet/sing-geoip/raw/rule-set/geoip-cn.srs",
         "update_interval": "24h",
         "download_detour": "sub"

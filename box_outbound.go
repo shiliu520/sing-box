@@ -143,6 +143,11 @@ func (s *Box) startOutboundsAndOutboundProviders() error {
 		}
 		for _, node := range outboundGraph.NodeMap() {
 			if node.Data() == nil {
+				for _, provider := range s.outboundProviders {
+					if node.ID() == provider.Tag() {
+						return E.New("outbound [", provider.DependentOutbound(), "] not found")
+					}
+				}
 				return E.New("outbound [", node.ID(), "] not found")
 			}
 		}

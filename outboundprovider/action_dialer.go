@@ -23,15 +23,16 @@ func init() {
 }
 
 type actionDialerOptions struct {
-	Rules     option.Listable[string] `json:"rules,omitempty"`
-	BlackMode bool                    `json:"black_mode,omitempty"`
-	Dialer    map[string]any          `json:"dialer"`
+	Rules   option.Listable[string] `json:"rules,omitempty"`
+	Logical string                  `json:"logical,omitempty"`
+	Invert  bool                    `json:"invert,omitempty"`
+	Dialer  map[string]any          `json:"dialer"`
 }
 
 type actionDialer struct {
-	outboundMatchers []outboundMatcher
-	blackMode        bool
-	dialer           map[string]any
+	outboundMatcherGroup outboundMatcher
+	invert               bool
+	dialer               map[string]any
 }
 
 func (a *actionDialer) UnmarshalJSON(content []byte) error {
@@ -40,17 +41,15 @@ func (a *actionDialer) UnmarshalJSON(content []byte) error {
 	if err != nil {
 		return err
 	}
-	if len(options.Rules) > 0 {
-		a.outboundMatchers = make([]outboundMatcher, 0, len(options.Rules))
-		for i, rule := range options.Rules {
-			matcher, err := newOutboundMatcher(rule)
-			if err != nil {
-				return E.Cause(err, "invalid rule[", i, "]: ", rule)
-			}
-			a.outboundMatchers = append(a.outboundMatchers, matcher)
-		}
+	logical := options.Logical
+	if logical == "" {
+		logical = "and"
 	}
-	a.blackMode = options.BlackMode
+	a.outboundMatcherGroup, err = newOutboundMatcherGroup(options.Rules, logical)
+	if err != nil {
+		return err
+	}
+	a.invert = options.Invert
 	if options.Dialer == nil || len(options.Dialer) == 0 {
 		return E.New("invalid dialer")
 	}
@@ -61,16 +60,14 @@ func (a *actionDialer) UnmarshalJSON(content []byte) error {
 func (a *actionDialer) apply(_ context.Context, _ adapter.Router, logger log.ContextLogger, processor *processor) error {
 	var outbounds []*option.Outbound
 	processor.ForeachOutbounds(func(outbound *option.Outbound) bool {
-		for _, matcher := range a.outboundMatchers {
-			if matcher.match(outbound) {
-				if !a.blackMode {
-					outbounds = append(outbounds, outbound)
-				}
-				return true
+		if a.outboundMatcherGroup.match(outbound) {
+			if !a.invert {
+				outbounds = append(outbounds, outbound)
 			}
-		}
-		if a.blackMode {
-			outbounds = append(outbounds, outbound)
+		} else {
+			if a.invert {
+				outbounds = append(outbounds, outbound)
+			}
 		}
 		return true
 	})
