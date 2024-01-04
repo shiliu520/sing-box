@@ -84,6 +84,7 @@ type OutboundProvider struct {
 	groupOutbounds     []adapter.Outbound
 	groupOutboundByTag map[string]adapter.Outbound
 	globalOutbound     adapter.Outbound
+	cacheOutbounds     []adapter.Outbound
 	//
 	updateLock    sync.Mutex
 	loopCtx       context.Context
@@ -192,7 +193,7 @@ func (p *OutboundProvider) PreStart() error {
 }
 
 func (p *OutboundProvider) Start() error {
-	if p.updateInterval > 0 {
+	if p.updateInterval > 0 && p.loopCtx == nil {
 		p.loopCtx, p.loopCancel = context.WithCancel(p.ctx)
 		p.loopCloseDone = make(chan struct{}, 1)
 		go p.loopUpdate()
@@ -210,10 +211,16 @@ func (p *OutboundProvider) Close() error {
 }
 
 func (p *OutboundProvider) Outbounds() []adapter.Outbound {
-	outbounds := make([]adapter.Outbound, 0, len(p.basicOutbounds)+len(p.groupOutbounds)+1)
-	outbounds = append(outbounds, p.basicOutbounds...)
-	outbounds = append(outbounds, p.groupOutbounds...)
-	outbounds = append(outbounds, p.globalOutbound)
+	outbounds := p.cacheOutbounds
+	if len(outbounds) == 0 {
+		outbounds = make([]adapter.Outbound, 0, len(p.basicOutbounds)+len(p.groupOutbounds)+1)
+		outbounds = append(outbounds, p.basicOutbounds...)
+		outbounds = append(outbounds, p.groupOutbounds...)
+		if p.globalOutbound != nil {
+			outbounds = append(outbounds, p.globalOutbound)
+		}
+		p.cacheOutbounds = outbounds
+	}
 	return outbounds
 }
 
@@ -236,15 +243,22 @@ func (p *OutboundProvider) BasicOutbounds() []adapter.Outbound {
 }
 
 func (p *OutboundProvider) Outbound(tag string) (adapter.Outbound, bool) {
-	if p.globalOutbound.Tag() == tag {
+	if p.globalOutbound != nil && p.globalOutbound.Tag() == tag {
 		return p.globalOutbound, true
 	}
-	outbound, loaded := p.groupOutboundByTag[tag]
-	if loaded {
-		return outbound, true
+	if p.basicOutboundByTag != nil {
+		outbound, loaded := p.basicOutboundByTag[tag]
+		if loaded {
+			return outbound, true
+		}
 	}
-	outbound, loaded = p.basicOutboundByTag[tag]
-	return outbound, loaded
+	if p.groupOutboundByTag != nil {
+		outbound, loaded := p.groupOutboundByTag[tag]
+		if loaded {
+			return outbound, true
+		}
+	}
+	return nil, false
 }
 
 func (p *OutboundProvider) Update() {
@@ -327,6 +341,9 @@ func (p *OutboundProvider) newOutbounds(outboundOptions []option.Outbound) ([]ad
 		}
 	}
 	basicOutboundOptions := processor.BasicOutbounds()
+	if len(basicOutboundOptions) == 0 {
+		return nil, nil, nil, E.New("missing basic outbound")
+	}
 	groupOutboundOptions := processor.GroupOutbounds()
 	globalOutboundOptions := option.Outbound{
 		Tag:             p.tag,
@@ -358,8 +375,8 @@ func (p *OutboundProvider) newOutbounds(outboundOptions []option.Outbound) ([]ad
 	globalOutboundOptions.SelectorOptions.Outbounds = outboundTags
 	// create outbounds
 	var (
-		basicOutbounds = make([]adapter.Outbound, len(basicOutboundOptions))
-		groupOutbounds = make([]adapter.Outbound, len(groupOutboundOptions))
+		basicOutbounds = make([]adapter.Outbound, 0, len(basicOutboundOptions))
+		groupOutbounds = make([]adapter.Outbound, 0, len(groupOutboundOptions))
 	)
 	for i, outboundOptions := range basicOutboundOptions {
 		var out adapter.Outbound
@@ -372,7 +389,7 @@ func (p *OutboundProvider) newOutbounds(outboundOptions []option.Outbound) ([]ad
 		if err != nil {
 			return nil, nil, nil, E.Cause(err, "parse basic outbound[", i, "]")
 		}
-		basicOutbounds[i] = out
+		basicOutbounds = append(basicOutbounds, out)
 	}
 	for i, outboundOptions := range groupOutboundOptions {
 		var out adapter.Outbound
@@ -385,7 +402,7 @@ func (p *OutboundProvider) newOutbounds(outboundOptions []option.Outbound) ([]ad
 		if err != nil {
 			return nil, nil, nil, E.Cause(err, "parse group outbound[", i, "]")
 		}
-		groupOutbounds[i] = out
+		groupOutbounds = append(groupOutbounds, out)
 	}
 	var globalOutbound adapter.Outbound
 	globalOutbound, err = outbound.New(
