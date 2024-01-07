@@ -28,7 +28,7 @@ type actionTagFormatOptions struct {
 }
 
 type actionTagFormat struct {
-	outboundMatcherGroup outboundMatcher
+	outboundMatcherGroup adapter.OutboundMatcher
 	invert               bool
 	format               string
 }
@@ -43,7 +43,7 @@ func (a *actionTagFormat) UnmarshalJSON(content []byte) error {
 	if logical == "" {
 		logical = "or"
 	}
-	a.outboundMatcherGroup, err = newOutboundMatcherGroup(options.Rules, logical)
+	a.outboundMatcherGroup, err = adapter.NewOutboundMatcherGroup(options.Rules, logical)
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func (a *actionTagFormat) formatTag(s string) string {
 func (a *actionTagFormat) apply(_ context.Context, _ adapter.Router, logger log.ContextLogger, processor *processor) error {
 	var outbounds []*option.Outbound
 	processor.ForeachOutbounds(func(outbound *option.Outbound) bool {
-		if a.outboundMatcherGroup.match(outbound) {
+		if a.outboundMatcherGroup.MatchOptions(outbound) {
 			if !a.invert {
 				outbounds = append(outbounds, outbound)
 			}

@@ -242,6 +242,25 @@ func (p *OutboundProvider) BasicOutbounds() []adapter.Outbound {
 	}
 }
 
+func (p *OutboundProvider) FilterOutbounds(matcher adapter.OutboundMatcher, invert bool) []adapter.Outbound {
+	outbounds := make([]adapter.Outbound, 0, len(p.basicOutbounds)+len(p.groupOutbounds))
+	outbounds = append(outbounds, p.basicOutbounds...)
+	outbounds = append(outbounds, p.groupOutbounds...)
+	filterOutbounds := make([]adapter.Outbound, 0, len(outbounds))
+	for _, outbound := range outbounds {
+		if !invert {
+			if matcher.MatchOutbound(outbound) {
+				filterOutbounds = append(filterOutbounds, outbound)
+			}
+		} else {
+			if !matcher.MatchOutbound(outbound) {
+				filterOutbounds = append(filterOutbounds, outbound)
+			}
+		}
+	}
+	return filterOutbounds
+}
+
 func (p *OutboundProvider) Outbound(tag string) (adapter.Outbound, bool) {
 	if p.globalOutbound != nil && p.globalOutbound.Tag() == tag {
 		return p.globalOutbound, true

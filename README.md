@@ -254,6 +254,51 @@ Rules 支持匹配 Tag 或 Type：
 }
 ```
 
+### Group Outbound 添加 Outbound Provider 中的 Outbound
+
+#### 示例配置
+```json5
+{
+  "outbounds": [
+    {
+      "tag": "HK",
+      "type": "selector", // 支持 Selector 和 URLTest
+      // "outbounds": [
+      //   ...
+      // ]
+      "providers": [ // 添加 Outbound Provider 中的 Outbound
+        {
+          "tag": "sub", // Outbound Provider Tag
+          // 参考上面
+          "rules": ["HK"],
+          "logical": "or", // 默认为 or
+          //
+          "invert": false // 默认为 false ，匹配到的 Outbound 才会被添加；若为 true ，没有匹配到的 Outbound 才会被添加
+        }
+        // 上述配置会把 Tag 为 HK 的 Outbound 添加到 Group Outbound 中
+      ]
+    }
+  ],
+  "outbound_providers": [
+    {
+      "tag": "sub",
+      "url": "http://example.com", // 订阅链接
+      "update_interval": "24h",
+      "actions": [
+        {
+          "type": "filter",
+          "rules": [
+            "剩余",
+            "过期",
+            "更多"
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
 ### Rule Provider Clash API
 
 ```RuleSet``` 适配了 ```Clash API```

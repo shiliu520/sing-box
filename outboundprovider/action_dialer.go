@@ -30,7 +30,7 @@ type actionDialerOptions struct {
 }
 
 type actionDialer struct {
-	outboundMatcherGroup outboundMatcher
+	outboundMatcherGroup adapter.OutboundMatcher
 	invert               bool
 	dialer               map[string]any
 }
@@ -45,7 +45,7 @@ func (a *actionDialer) UnmarshalJSON(content []byte) error {
 	if logical == "" {
 		logical = "and"
 	}
-	a.outboundMatcherGroup, err = newOutboundMatcherGroup(options.Rules, logical)
+	a.outboundMatcherGroup, err = adapter.NewOutboundMatcherGroup(options.Rules, logical)
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func (a *actionDialer) UnmarshalJSON(content []byte) error {
 func (a *actionDialer) apply(_ context.Context, _ adapter.Router, logger log.ContextLogger, processor *processor) error {
 	var outbounds []*option.Outbound
 	processor.ForeachOutbounds(func(outbound *option.Outbound) bool {
-		if a.outboundMatcherGroup.match(outbound) {
+		if a.outboundMatcherGroup.MatchOptions(outbound) {
 			if !a.invert {
 				outbounds = append(outbounds, outbound)
 			}
