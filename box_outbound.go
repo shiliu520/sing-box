@@ -100,8 +100,10 @@ func (s *Box) startOutboundsAndOutboundProviders() error {
 						dpNode = datastructure.NewGraphNode[string, adapter.Outbound](dependency, nil)
 						outboundGraph.AddNode(dpNode)
 					}
-					dpNode.AddNext(outNode)
-					outNode.AddPrev(dpNode)
+					if !startedOutboundMap[dependency] {
+						dpNode.AddNext(outNode)
+						outNode.AddPrev(dpNode)
+					}
 				}
 			}
 			startedProviderMap[provider.Tag()] = true
