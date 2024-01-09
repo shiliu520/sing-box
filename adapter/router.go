@@ -98,6 +98,7 @@ type RuleSet interface {
 	PostStart() error
 	Metadata() RuleSetMetadata
 	Close() error
+	Update()
 	HeadlessRule
 }
 

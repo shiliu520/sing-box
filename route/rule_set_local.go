@@ -95,3 +95,6 @@ func (s *LocalRuleSet) Metadata() adapter.RuleSetMetadata {
 func (s *LocalRuleSet) Close() error {
 	return nil
 }
+
+func (s *LocalRuleSet) Update() {
+}
