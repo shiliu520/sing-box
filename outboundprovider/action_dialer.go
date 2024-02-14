@@ -26,13 +26,21 @@ type actionDialerOptions struct {
 	Rules   option.Listable[string] `json:"rules,omitempty"`
 	Logical string                  `json:"logical,omitempty"`
 	Invert  bool                    `json:"invert,omitempty"`
-	Dialer  map[string]any          `json:"dialer"`
+	// Deprecated
+	Dialer map[string]any `json:"dialer,omitempty"`
+	// New
+	DeleteDialer option.Listable[string] `json:"delete_dialer,omitempty"`
+	SetDialer    map[string]any          `json:"set_dialer,omitempty"`
 }
 
 type actionDialer struct {
 	outboundMatcherGroup adapter.OutboundMatcher
 	invert               bool
-	dialer               map[string]any
+	// Deprecated
+	dialer map[string]any
+	// New
+	deleteDialer []string
+	setDialer    map[string]any
 }
 
 func (a *actionDialer) UnmarshalJSON(content []byte) error {
@@ -50,10 +58,18 @@ func (a *actionDialer) UnmarshalJSON(content []byte) error {
 		return err
 	}
 	a.invert = options.Invert
-	if options.Dialer == nil || len(options.Dialer) == 0 {
+	// Deprecated && New
+	a.deleteDialer = options.DeleteDialer
+	a.setDialer = options.SetDialer
+	// if len(options.DeleteDialer) == 0 || options.SetDialer == nil || len(options.SetDialer) == 0 {
+	//		return E.New("invalid dialer")
+	// }
+	//
+	a.dialer = options.Dialer
+	if len(options.DeleteDialer) == 0 || options.SetDialer == nil || len(options.SetDialer) == 0 || options.Dialer == nil || len(options.Dialer) == 0 {
 		return E.New("invalid dialer")
 	}
-	a.dialer = options.Dialer
+	//
 	return nil
 }
 
@@ -83,21 +99,37 @@ func (a *actionDialer) apply(_ context.Context, _ adapter.Router, logger log.Con
 		if err != nil {
 			return E.Cause(err, "outbound [", out.Tag, "]: failed to parse dialer options")
 		}
-		for k := range a.dialer {
-			kk := strings.TrimPrefix(k, "del_")
-			if kk != k {
-				delete(m, kk)
-				logger.Debug("outbound [", out.Tag, "]: delete dialer option [", kk, "]")
-				continue
-			}
-			kk = strings.TrimPrefix(k, "set_")
-			if kk != k {
-				v := a.dialer[k]
-				m[kk] = v
-				logger.Debug("outbound [", out.Tag, "]: set dialer option [", kk, "] -> ", fmt.Sprintf("%s", v))
-				continue
+		// Deprecated
+		if a.dialer != nil && len(a.dialer) > 0 {
+			logger.Warn("outbound-provider: setdialer: dialer option is deprecated, please use delete_dialer and set_dialer")
+			for k := range a.dialer {
+				kk := strings.TrimPrefix(k, "del_")
+				if kk != k {
+					delete(m, kk)
+					logger.Debug("outbound [", out.Tag, "]: delete dialer option [", kk, "]")
+					continue
+				}
+				kk = strings.TrimPrefix(k, "set_")
+				if kk != k {
+					v := a.dialer[k]
+					m[kk] = v
+					logger.Debug("outbound [", out.Tag, "]: set dialer option [", kk, "] -> ", fmt.Sprintf("%s", v))
+					continue
+				}
 			}
 		}
+		// New
+		for _, k := range a.deleteDialer {
+			delete(m, k)
+			logger.Debug("outbound [", out.Tag, "]: delete dialer option [", k, "]")
+		}
+		if a.setDialer != nil && len(a.setDialer) > 0 {
+			for k, v := range a.setDialer {
+				m[k] = v
+				logger.Debug("outbound [", out.Tag, "]: set dialer option [", k, "] -> ", fmt.Sprintf("%s", v))
+			}
+		}
+		//
 		newDialerOptions, err := mapToStruct[option.DialerOptions](m)
 		if err != nil {
 			return E.Cause(err, "outbound [", out.Tag, "]: failed to parse dialer options")

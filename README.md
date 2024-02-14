@@ -2,6 +2,17 @@
 
 这是一个第三方 Fork 仓库，在原有基础上添加一些强大功能
 
+## 更新日志
+
+```
+2024-02-14
+1. 同步上游
+2. 修复 VMess Raw 链接解析
+3. 调整 OutboundProvider Action setdialer 配置格式
+```
+
+##
+
 ### Outbound Provider
 
 允许从远程获取 ```Outbound``` ，支持普通链接、Clash订阅、Sing-box订阅。并在此基础上对 ```Outbound``` 进行配置修改
@@ -140,10 +151,23 @@ Rules 支持匹配 Tag 或 Type：
   "logical": "and", // 默认为 and
   //
   "invert": false, // 默认为 false ，匹配到的 Outbound 才会被执行操作；若为 true ，没有匹配到的 Outbound 才会被执行操作
+  // 过时配置，将在未来移除
   "dialer": {
     "set_$tag": ..., // 以 set_ 开头，覆写原配置 $tag 项，覆写注意值类型
     "del_$tag": null // 以 del_ 开头，删除原配置 $tag 项，键值任意
+  },
+  //
+  // 新配置
+  // 删除原配置 $tag 项
+  "delete_dialer": [
+    "$tag",
+    ...
+  ],
+  // 覆写原配置 $tag 项，覆写注意值类型
+  "set_dialer": {
+    "$tag": "$value"
   }
+  //
 }
 ```
 
