@@ -163,6 +163,7 @@ func (s *RemoteRuleSet) loadBytes(content []byte) error {
 	}
 	s.metadata.ContainsProcessRule = hasHeadlessRule(plainRuleSet.Rules, isProcessHeadlessRule)
 	s.metadata.ContainsWIFIRule = hasHeadlessRule(plainRuleSet.Rules, isWIFIHeadlessRule)
+	s.metadata.ContainsIPCIDRRule = hasHeadlessRule(plainRuleSet.Rules, isIPCIDRHeadlessRule)
 	s.metadata.RuleNum = len(rules)
 	s.lastUpdated = time.Now()
 	s.rules = rules

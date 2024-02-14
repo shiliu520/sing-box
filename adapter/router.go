@@ -89,6 +89,9 @@ type DNSRule interface {
 	Rule
 	DisableCache() bool
 	RewriteTTL() *uint32
+	ClientSubnet() *netip.Addr
+	WithAddressLimit() bool
+	MatchAddressLimit(metadata *InboundContext) bool
 }
 
 type RuleSet interface {
@@ -105,6 +108,7 @@ type RuleSet interface {
 type RuleSetMetadata struct {
 	ContainsProcessRule bool
 	ContainsWIFIRule    bool
+	ContainsIPCIDRRule  bool
 	RuleNum             int
 	LastUpdated         time.Time
 	Format              string
