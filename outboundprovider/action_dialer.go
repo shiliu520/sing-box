@@ -66,7 +66,7 @@ func (a *actionDialer) UnmarshalJSON(content []byte) error {
 	// }
 	//
 	a.dialer = options.Dialer
-	if len(options.DeleteDialer) == 0 || options.SetDialer == nil || len(options.SetDialer) == 0 || options.Dialer == nil || len(options.Dialer) == 0 {
+	if (len(options.DeleteDialer) == 0 || options.SetDialer == nil || len(options.SetDialer) == 0) && (options.Dialer == nil || len(options.Dialer) == 0) {
 		return E.New("invalid dialer")
 	}
 	//
@@ -117,19 +117,20 @@ func (a *actionDialer) apply(_ context.Context, _ adapter.Router, logger log.Con
 					continue
 				}
 			}
-		}
-		// New
-		for _, k := range a.deleteDialer {
-			delete(m, k)
-			logger.Debug("outbound [", out.Tag, "]: delete dialer option [", k, "]")
-		}
-		if a.setDialer != nil && len(a.setDialer) > 0 {
-			for k, v := range a.setDialer {
-				m[k] = v
-				logger.Debug("outbound [", out.Tag, "]: set dialer option [", k, "] -> ", fmt.Sprintf("%s", v))
+		} else {
+			// New
+			for _, k := range a.deleteDialer {
+				delete(m, k)
+				logger.Debug("outbound [", out.Tag, "]: delete dialer option [", k, "]")
 			}
+			if a.setDialer != nil && len(a.setDialer) > 0 {
+				for k, v := range a.setDialer {
+					m[k] = v
+					logger.Debug("outbound [", out.Tag, "]: set dialer option [", k, "] -> ", fmt.Sprintf("%s", v))
+				}
+			}
+			//
 		}
-		//
 		newDialerOptions, err := mapToStruct[option.DialerOptions](m)
 		if err != nil {
 			return E.Cause(err, "outbound [", out.Tag, "]: failed to parse dialer options")
