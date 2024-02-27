@@ -103,6 +103,7 @@
           "geoip-cn",
           "geosite-cn"
         ],
+        "rule_set_ipcidr_match_source": false,
         "invert": false,
         "outbound": "direct"
       },
@@ -278,7 +279,7 @@
 
 !!! quote ""
 
-    仅在 Android 与 iOS 的图形客户端中支持。
+    仅在 Android 与 Apple 平台图形客户端中支持。
 
 匹配 WiFi SSID。
 
@@ -286,7 +287,7 @@
 
 !!! quote ""
 
-    仅在 Android 与 iOS 的图形客户端中支持。
+    仅在 Android 与 Apple 平台图形客户端中支持。
 
 匹配 WiFi BSSID。
 

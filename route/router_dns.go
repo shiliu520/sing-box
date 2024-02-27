@@ -56,7 +56,8 @@ func (r *Router) matchDNS(ctx context.Context, allowFakeIP bool, index int) (con
 					r.dnsLogger.ErrorContext(ctx, "transport not found: ", detour)
 					continue
 				}
-				if _, isFakeIP := transport.(adapter.FakeIPTransport); isFakeIP && !allowFakeIP {
+				_, isFakeIP := transport.(adapter.FakeIPTransport)
+				if isFakeIP && !allowFakeIP {
 					continue
 				}
 				displayRuleIndex := ruleIndex
@@ -64,7 +65,7 @@ func (r *Router) matchDNS(ctx context.Context, allowFakeIP bool, index int) (con
 					displayRuleIndex += index + 1
 				}
 				r.dnsLogger.DebugContext(ctx, "match[", displayRuleIndex, "] ", rule.String(), " => ", detour)
-				if rule.DisableCache() {
+				if (isFakeIP && !r.dnsIndependentCache) || rule.DisableCache() {
 					ctx = dns.ContextWithDisableCache(ctx, true)
 				}
 				if rewriteTTL := rule.RewriteTTL(); rewriteTTL != nil {
@@ -93,9 +94,10 @@ func (r *Router) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, er
 		r.dnsLogger.DebugContext(ctx, "exchange ", formatQuestion(message.Question[0].String()))
 	}
 	var (
-		response *mDNS.Msg
-		cached   bool
-		err      error
+		response  *mDNS.Msg
+		cached    bool
+		transport dns.Transport
+		err       error
 	)
 	response, cached = r.dnsClient.ExchangeCache(ctx, message)
 	if !cached {
@@ -112,7 +114,6 @@ func (r *Router) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, er
 			metadata.Domain = fqdnToDomain(message.Question[0].Name)
 		}
 		var (
-			transport dns.Transport
 			strategy  dns.DomainStrategy
 			rule      adapter.DNSRule
 			ruleIndex int
@@ -139,7 +140,9 @@ func (r *Router) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, er
 			}
 			cancel()
 			if err != nil {
-				if errors.Is(err, dns.ErrResponseRejected) {
+				if errors.Is(err, dns.ErrResponseRejectedCached) {
+					r.dnsLogger.DebugContext(ctx, E.Cause(err, "response rejected for ", formatQuestion(message.Question[0].String())), " (cached)")
+				} else if errors.Is(err, dns.ErrResponseRejected) {
 					r.dnsLogger.DebugContext(ctx, E.Cause(err, "response rejected for ", formatQuestion(message.Question[0].String())))
 				} else if len(message.Question) > 0 {
 					r.dnsLogger.ErrorContext(ctx, E.Cause(err, "exchange failed for ", formatQuestion(message.Question[0].String())))
@@ -152,20 +155,34 @@ func (r *Router) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, er
 			}
 		}
 	}
+	if err != nil {
+		return nil, err
+	}
 	if r.dnsReverseMapping != nil && len(message.Question) > 0 && response != nil && len(response.Answer) > 0 {
-		for _, answer := range response.Answer {
-			switch record := answer.(type) {
-			case *mDNS.A:
-				r.dnsReverseMapping.Save(M.AddrFromIP(record.A), fqdnToDomain(record.Hdr.Name), int(record.Hdr.Ttl))
-			case *mDNS.AAAA:
-				r.dnsReverseMapping.Save(M.AddrFromIP(record.AAAA), fqdnToDomain(record.Hdr.Name), int(record.Hdr.Ttl))
+		if _, isFakeIP := transport.(adapter.FakeIPTransport); !isFakeIP {
+			for _, answer := range response.Answer {
+				switch record := answer.(type) {
+				case *mDNS.A:
+					r.dnsReverseMapping.Save(M.AddrFromIP(record.A), fqdnToDomain(record.Hdr.Name), int(record.Hdr.Ttl))
+				case *mDNS.AAAA:
+					r.dnsReverseMapping.Save(M.AddrFromIP(record.AAAA), fqdnToDomain(record.Hdr.Name), int(record.Hdr.Ttl))
+				}
 			}
 		}
 	}
-	return response, err
+	return response, nil
 }
 
 func (r *Router) Lookup(ctx context.Context, domain string, strategy dns.DomainStrategy) ([]netip.Addr, error) {
+	var (
+		responseAddrs []netip.Addr
+		cached        bool
+		err           error
+	)
+	responseAddrs, cached = r.dnsClient.LookupCache(ctx, domain, strategy)
+	if cached {
+		return responseAddrs, nil
+	}
 	r.dnsLogger.DebugContext(ctx, "lookup domain ", domain)
 	ctx, metadata := adapter.AppendContext(ctx)
 	metadata.Domain = domain
@@ -174,8 +191,6 @@ func (r *Router) Lookup(ctx context.Context, domain string, strategy dns.DomainS
 		transportStrategy dns.DomainStrategy
 		rule              adapter.DNSRule
 		ruleIndex         int
-		resultAddrs       []netip.Addr
-		err               error
 	)
 	ruleIndex = -1
 	for {
@@ -193,22 +208,24 @@ func (r *Router) Lookup(ctx context.Context, domain string, strategy dns.DomainS
 		dnsCtx, cancel = context.WithTimeout(dnsCtx, C.DNSTimeout)
 		if rule != nil && rule.WithAddressLimit() {
 			addressLimit = true
-			resultAddrs, err = r.dnsClient.LookupWithResponseCheck(dnsCtx, transport, domain, strategy, func(responseAddrs []netip.Addr) bool {
+			responseAddrs, err = r.dnsClient.LookupWithResponseCheck(dnsCtx, transport, domain, strategy, func(responseAddrs []netip.Addr) bool {
 				metadata.DestinationAddresses = responseAddrs
 				return rule.MatchAddressLimit(metadata)
 			})
 		} else {
 			addressLimit = false
-			resultAddrs, err = r.dnsClient.Lookup(dnsCtx, transport, domain, strategy)
+			responseAddrs, err = r.dnsClient.Lookup(dnsCtx, transport, domain, strategy)
 		}
 		cancel()
 		if err != nil {
-			if errors.Is(err, dns.ErrResponseRejected) {
+			if errors.Is(err, dns.ErrResponseRejectedCached) {
+				r.dnsLogger.DebugContext(ctx, "response rejected for ", domain, " (cached)")
+			} else if errors.Is(err, dns.ErrResponseRejected) {
 				r.dnsLogger.DebugContext(ctx, "response rejected for ", domain)
 			} else {
 				r.dnsLogger.ErrorContext(ctx, E.Cause(err, "lookup failed for ", domain))
 			}
-		} else if len(resultAddrs) == 0 {
+		} else if len(responseAddrs) == 0 {
 			r.dnsLogger.ErrorContext(ctx, "lookup failed for ", domain, ": empty result")
 			err = dns.RCodeNameError
 		}
@@ -216,10 +233,10 @@ func (r *Router) Lookup(ctx context.Context, domain string, strategy dns.DomainS
 			break
 		}
 	}
-	if len(resultAddrs) > 0 {
-		r.dnsLogger.InfoContext(ctx, "lookup succeed for ", domain, ": ", strings.Join(F.MapToString(resultAddrs), " "))
+	if len(responseAddrs) > 0 {
+		r.dnsLogger.InfoContext(ctx, "lookup succeed for ", domain, ": ", strings.Join(F.MapToString(responseAddrs), " "))
 	}
-	return resultAddrs, err
+	return responseAddrs, err
 }
 
 func (r *Router) LookupDefault(ctx context.Context, domain string) ([]netip.Addr, error) {
