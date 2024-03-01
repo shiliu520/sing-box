@@ -66,7 +66,7 @@ func (a *actionDialer) UnmarshalJSON(content []byte) error {
 	// }
 	//
 	a.dialer = options.Dialer
-	if (len(options.DeleteDialer) == 0 || options.SetDialer == nil || len(options.SetDialer) == 0) && (options.Dialer == nil || len(options.Dialer) == 0) {
+	if (len(options.DeleteDialer) == 0 && (options.SetDialer == nil || len(options.SetDialer) == 0)) && (options.Dialer == nil || len(options.Dialer) == 0) {
 		return E.New("invalid dialer")
 	}
 	//
