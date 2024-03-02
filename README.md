@@ -5,6 +5,11 @@
 ## 更新日志
 
 ```
+2024-03-02
+1. 同步上游
+2. 修复 OutboundProvider Action setdialer
+3. 恢复对 ShadowsocksR 支持，详情见下文档
+
 2024-02-14
 1. 同步上游
 2. 修复 VMess Raw 链接解析
@@ -326,3 +331,9 @@ Rules 支持匹配 Tag 或 Type：
 ### Rule Provider Clash API
 
 ```RuleSet``` 适配了 ```Clash API```
+
+### 恢复 ShadowsocksR 支持
+
+方便机场用户使用，编译加入 ```with_shadowsocksr``` 即可
+
+！！请注意！！：ShadowsocksR 已经废弃多时，目前处于无人维护阶段，对于可能出现的漏洞无法及时修补，存在安全隐患！请谨慎考虑使用！
