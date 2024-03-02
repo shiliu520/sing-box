@@ -63,6 +63,8 @@ func ParseRawConfig(raw []byte) ([]option.Outbound, error) {
 			peer = &Hysteria2{}
 		case "ss":
 			peer = &Shadowsocks{}
+		case "ssr":
+			peer = &ShadowsocksR{}
 		case "trojan":
 			peer = &Trojan{}
 		case "vmess":

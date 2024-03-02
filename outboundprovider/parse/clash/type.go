@@ -19,15 +19,16 @@ type ClashConfig struct {
 }
 
 const (
-	ClashTypeHTTP        = "http"
-	ClashTypeSocks5      = "socks5"
-	ClashTypeShadowsocks = "ss"
-	ClashTypeVMess       = "vmess"
-	ClashTypeTrojan      = "trojan"
-	ClashTypeVLESS       = "vless"
-	ClashTypeHysteria    = "hysteria"
-	ClashTypeHysteria2   = "hysteria2"
-	ClashTypeTUIC        = "tuic"
+	ClashTypeHTTP         = "http"
+	ClashTypeSocks5       = "socks5"
+	ClashTypeShadowsocks  = "ss"
+	ClashTypeShadowsocksR = "ssr"
+	ClashTypeVMess        = "vmess"
+	ClashTypeTrojan       = "trojan"
+	ClashTypeVLESS        = "vless"
+	ClashTypeHysteria     = "hysteria"
+	ClashTypeHysteria2    = "hysteria2"
+	ClashTypeTUIC         = "tuic"
 )
 
 type Port uint16
@@ -83,6 +84,8 @@ func (c *ClashProxy) UnmarshalYAML(node *yaml.Node) error {
 		c.Proxy = &ClashSocks{}
 	case ClashTypeShadowsocks:
 		c.Proxy = &ClashShadowsocks{}
+	case ClashTypeShadowsocksR:
+		c.Proxy = &ClashShadowsocksR{}
 	case ClashTypeVMess:
 		c.Proxy = &ClashVMess{}
 	case ClashTypeVLESS:
