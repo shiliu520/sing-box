@@ -83,6 +83,9 @@ func (s *Box) startOutboundsAndOutboundProviders() error {
 			}
 			outbounds := provider.Outbounds()
 			for _, outbound := range outbounds {
+				if outbound.Tag() == "direct" {
+					continue
+				}
 				outNode := outboundGraph.GetNode(outbound.Tag())
 				if outNode == nil {
 					outNode = datastructure.NewGraphNode[string, adapter.Outbound](outbound.Tag(), outbound)
