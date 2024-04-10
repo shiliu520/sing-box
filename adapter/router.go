@@ -76,6 +76,7 @@ func RouterFromContext(ctx context.Context) Router {
 
 type HeadlessRule interface {
 	Match(metadata *InboundContext) bool
+	String() string
 }
 
 type Rule interface {
@@ -84,7 +85,6 @@ type Rule interface {
 	Type() string
 	UpdateGeosite() error
 	Outbound() string
-	String() string
 }
 
 type DNSRule interface {
