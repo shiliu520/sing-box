@@ -23,7 +23,6 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/experimental/libbox/platform"
 	"github.com/sagernet/sing-box/log"
-	"github.com/sagernet/sing-box/ntp"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/outbound"
 	"github.com/sagernet/sing-box/transport/fakeip"
@@ -40,7 +39,7 @@ import (
 	F "github.com/sagernet/sing/common/format"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
-	serviceNTP "github.com/sagernet/sing/common/ntp"
+	"github.com/sagernet/sing/common/ntp"
 	"github.com/sagernet/sing/common/task"
 	"github.com/sagernet/sing/common/uot"
 	"github.com/sagernet/sing/common/winpowrprof"
@@ -365,11 +364,19 @@ func NewRouter(
 	}
 
 	if ntpOptions.Enabled {
-		timeService, err := ntp.NewService(ctx, router, logFactory.NewLogger("ntp"), ntpOptions)
+		ntpDialer, err := dialer.New(router, ntpOptions.DialerOptions)
 		if err != nil {
-			return nil, err
+			return nil, E.Cause(err, "create NTP service")
 		}
-		service.ContextWith[serviceNTP.TimeService](ctx, timeService)
+		timeService := ntp.NewService(ntp.Options{
+			Context:       ctx,
+			Dialer:        ntpDialer,
+			Logger:        logFactory.NewLogger("ntp"),
+			Server:        ntpOptions.ServerOptions.Build(),
+			Interval:      time.Duration(ntpOptions.Interval),
+			WriteToSystem: ntpOptions.WriteToSystem,
+		})
+		service.MustRegister[ntp.TimeService](ctx, timeService)
 		router.timeService = timeService
 	}
 	return router, nil
@@ -554,7 +561,7 @@ func (r *Router) Outbounds() []adapter.Outbound {
 }
 
 func (r *Router) PreStart() error {
-	monitor := taskmonitor.New(r.logger, C.DefaultStartTimeout)
+	monitor := taskmonitor.New(r.logger, C.StartTimeout)
 	if r.interfaceMonitor != nil {
 		monitor.Start("initialize interface monitor")
 		err := r.interfaceMonitor.Start()
@@ -583,7 +590,7 @@ func (r *Router) PreStart() error {
 }
 
 func (r *Router) Start() error {
-	monitor := taskmonitor.New(r.logger, C.DefaultStartTimeout)
+	monitor := taskmonitor.New(r.logger, C.StartTimeout)
 	err := r.initDefaultOutboundAgain()
 	if err != nil {
 		return err
@@ -757,7 +764,7 @@ func (r *Router) Start() error {
 }
 
 func (r *Router) Close() error {
-	monitor := taskmonitor.New(r.logger, C.DefaultStopTimeout)
+	monitor := taskmonitor.New(r.logger, C.StopTimeout)
 	var err error
 	for i, rule := range r.rules {
 		monitor.Start("close rule[", i, "]")

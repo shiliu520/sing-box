@@ -54,7 +54,7 @@ func (s *Box) startOutboundsAndOutboundProviders() error {
 	}
 	outboundQueue := datastructure.NewQueue[*datastructure.GraphNode[string, adapter.Outbound]]()
 	providerQueue := datastructure.NewQueue[adapter.OutboundProvider]()
-	monitor := taskmonitor.New(s.logger, C.DefaultStartTimeout)
+	monitor := taskmonitor.New(s.logger, C.StartTimeout)
 	for {
 		for outboundQueue.Len() > 0 {
 			node := outboundQueue.Pop()

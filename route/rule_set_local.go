@@ -3,6 +3,7 @@ package route
 import (
 	"context"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -10,6 +11,7 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
 	E "github.com/sagernet/sing/common/exceptions"
+	F "github.com/sagernet/sing/common/format"
 	"github.com/sagernet/sing/common/json"
 )
 
@@ -79,6 +81,10 @@ func (s *LocalRuleSet) Match(metadata *adapter.InboundContext) bool {
 		}
 	}
 	return false
+}
+
+func (s *LocalRuleSet) String() string {
+	return strings.Join(F.MapToString(s.rules), " ")
 }
 
 func (s *LocalRuleSet) StartContext(ctx context.Context, startContext adapter.RuleSetStartContext) error {
