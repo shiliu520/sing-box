@@ -5,6 +5,9 @@
 ## 更新日志
 
 ```
+2024-05-29
+1. 同步上游
+
 2024-03-02
 1. 同步上游
 2. 修复 OutboundProvider Action setdialer
