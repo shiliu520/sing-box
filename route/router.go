@@ -26,10 +26,10 @@ import (
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/outbound"
 	"github.com/sagernet/sing-box/transport/fakeip"
-	dns "github.com/sagernet/sing-dns"
-	mux "github.com/sagernet/sing-mux"
-	tun "github.com/sagernet/sing-tun"
-	vmess "github.com/sagernet/sing-vmess"
+	"github.com/sagernet/sing-dns"
+	"github.com/sagernet/sing-mux"
+	"github.com/sagernet/sing-tun"
+	"github.com/sagernet/sing-vmess"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
@@ -82,7 +82,7 @@ type Router struct {
 	transportDomainStrategy            map[dns.Transport]dns.DomainStrategy
 	dnsReverseMapping                  *DNSReverseMapping
 	fakeIPStore                        adapter.FakeIPStore
-	interfaceFinder                    myInterfaceFinder
+	interfaceFinder                    *control.DefaultInterfaceFinder
 	autoDetectInterface                bool
 	defaultInterface                   string
 	defaultMark                        int
@@ -128,6 +128,7 @@ func NewRouter(
 		dnsIndependentCache:   dnsOptions.IndependentCache,
 		defaultDetour:         options.Final,
 		defaultDomainStrategy: dns.DomainStrategy(dnsOptions.Strategy),
+		interfaceFinder:       control.NewDefaultInterfaceFinder(),
 		autoDetectInterface:   options.AutoDetectInterface,
 		defaultInterface:      options.DefaultInterface,
 		defaultMark:           options.DefaultMark,
@@ -238,7 +239,7 @@ func NewRouter(
 					return nil, E.New("parse dns server[", tag, "]: missing address_resolver")
 				}
 			}
-			var clientSubnet netip.Addr
+			var clientSubnet netip.Prefix
 			if server.ClientSubnet != nil {
 				clientSubnet = server.ClientSubnet.Build()
 			} else if dnsOptions.ClientSubnet != nil {
@@ -337,7 +338,7 @@ func NewRouter(
 			}
 			router.networkMonitor = networkMonitor
 			networkMonitor.RegisterCallback(func() {
-				_ = router.interfaceFinder.update()
+				_ = router.interfaceFinder.Update()
 			})
 			interfaceMonitor, err := tun.NewDefaultInterfaceMonitor(router.networkMonitor, router.logger, tun.DefaultInterfaceMonitorOptions{
 				OverrideAndroidVPN:    options.OverrideAndroidVPN,
@@ -970,7 +971,16 @@ func (r *Router) RouteConnection(ctx context.Context, conn net.Conn, metadata ad
 
 	if metadata.InboundOptions.SniffEnabled {
 		buffer := buf.NewPacket()
-		sniffMetadata, err := sniff.PeekStream(ctx, conn, buffer, time.Duration(metadata.InboundOptions.SniffTimeout), sniff.StreamDomainNameQuery, sniff.TLSClientHello, sniff.HTTPHost)
+		sniffMetadata, err := sniff.PeekStream(
+			ctx,
+			conn,
+			buffer,
+			time.Duration(metadata.InboundOptions.SniffTimeout),
+			sniff.StreamDomainNameQuery,
+			sniff.TLSClientHello,
+			sniff.HTTPHost,
+			sniff.BitTorrent,
+		)
 		if sniffMetadata != nil {
 			metadata.Protocol = sniffMetadata.Protocol
 			metadata.Domain = sniffMetadata.Domain
@@ -1097,7 +1107,15 @@ func (r *Router) RoutePacketConnection(ctx context.Context, conn N.PacketConn, m
 			metadata.Destination = destination
 		}
 		if metadata.InboundOptions.SniffEnabled {
-			sniffMetadata, _ := sniff.PeekPacket(ctx, buffer.Bytes(), sniff.DomainNameQuery, sniff.QUICClientHello, sniff.STUNMessage)
+			sniffMetadata, _ := sniff.PeekPacket(
+				ctx,
+				buffer.Bytes(),
+				sniff.DomainNameQuery,
+				sniff.QUICClientHello,
+				sniff.STUNMessage,
+				sniff.UTP,
+				sniff.UDPTracker,
+			)
 			if sniffMetadata != nil {
 				metadata.Protocol = sniffMetadata.Protocol
 				metadata.Domain = sniffMetadata.Domain
@@ -1217,24 +1235,18 @@ func (r *Router) match0(ctx context.Context, metadata *adapter.InboundContext, d
 }
 
 func (r *Router) InterfaceFinder() control.InterfaceFinder {
-	return &r.interfaceFinder
+	return r.interfaceFinder
 }
 
 func (r *Router) UpdateInterfaces() error {
 	if r.platformInterface == nil || !r.platformInterface.UsePlatformInterfaceGetter() {
-		return r.interfaceFinder.update()
+		return r.interfaceFinder.Update()
 	} else {
 		interfaces, err := r.platformInterface.Interfaces()
 		if err != nil {
 			return err
 		}
-		r.interfaceFinder.updateInterfaces(common.Map(interfaces, func(it platform.NetworkInterface) net.Interface {
-			return net.Interface{
-				Name:  it.Name,
-				Index: it.Index,
-				MTU:   it.MTU,
-			}
-		}))
+		r.interfaceFinder.UpdateInterfaces(interfaces)
 		return nil
 	}
 }

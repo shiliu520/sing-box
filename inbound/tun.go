@@ -38,6 +38,7 @@ type Tun struct {
 	tunStack               tun.Stack
 	platformInterface      platform.Interface
 	platformOptions        option.TunPlatformOptions
+	autoRedirect           *tunAutoRedirect
 	scripts                []*script.Script
 }
 
@@ -52,9 +53,9 @@ func NewTun(ctx context.Context, router adapter.Router, logger log.ContextLogger
 	} else {
 		udpTimeout = C.UDPTimeout
 	}
+	var err error
 	includeUID := uidToRange(options.IncludeUID)
 	if len(options.IncludeUIDRange) > 0 {
-		var err error
 		includeUID, err = parseRange(includeUID, options.IncludeUIDRange)
 		if err != nil {
 			return nil, E.Cause(err, "parse include_uid_range")
@@ -62,13 +63,13 @@ func NewTun(ctx context.Context, router adapter.Router, logger log.ContextLogger
 	}
 	excludeUID := uidToRange(options.ExcludeUID)
 	if len(options.ExcludeUIDRange) > 0 {
-		var err error
 		excludeUID, err = parseRange(excludeUID, options.ExcludeUIDRange)
 		if err != nil {
 			return nil, E.Cause(err, "parse exclude_uid_range")
 		}
 	}
-	t := &Tun{
+
+	inbound := &Tun{
 		tag:            tag,
 		ctx:            ctx,
 		router:         router,
@@ -102,17 +103,23 @@ func NewTun(ctx context.Context, router adapter.Router, logger log.ContextLogger
 		platformInterface:      platformInterface,
 		platformOptions:        common.PtrValueOrDefault(options.Platform),
 	}
+	if options.AutoRedirect {
+		inbound.autoRedirect, err = newAutoRedirect(inbound)
+		if err != nil {
+			return nil, E.Cause(err, "initialize auto redirect")
+		}
+	}
 	if len(options.Scripts) > 0 && platformInterface == nil {
-		t.scripts = make([]*script.Script, len(options.Scripts))
+		inbound.scripts = make([]*script.Script, len(options.Scripts))
 		for i, scriptOptions := range options.Scripts {
 			s, err := script.New(ctx, logger, scriptOptions)
 			if err != nil {
 				return nil, E.Cause(err, "create script[", i, "] failed")
 			}
-			t.scripts[i] = s
+			inbound.scripts[i] = s
 		}
 	}
-	return t, nil
+	return inbound, nil
 }
 
 func uidToRange(uidList option.Listable[uint32]) []ranges.Range[uint32] {
@@ -179,6 +186,14 @@ func (t *Tun) Start() error {
 	}
 	t.logger.Trace("creating stack")
 	t.tunIf = tunInterface
+	var (
+		forwarderBindInterface bool
+		includeAllNetworks     bool
+	)
+	if t.platformInterface != nil {
+		forwarderBindInterface = true
+		includeAllNetworks = t.platformInterface.IncludeAllNetworks()
+	}
 	t.tunStack, err = tun.NewStack(t.stack, tun.StackOptions{
 		Context:                t.ctx,
 		Tun:                    tunInterface,
@@ -187,8 +202,9 @@ func (t *Tun) Start() error {
 		UDPTimeout:             t.udpTimeout,
 		Handler:                t,
 		Logger:                 t.logger,
-		ForwarderBindInterface: t.platformInterface != nil,
+		ForwarderBindInterface: forwarderBindInterface,
 		InterfaceFinder:        t.router.InterfaceFinder(),
+		IncludeAllNetworks:     includeAllNetworks,
 	})
 	if err != nil {
 		return err
@@ -198,6 +214,14 @@ func (t *Tun) Start() error {
 	monitor.Finish()
 	if err != nil {
 		return err
+	}
+	if t.autoRedirect != nil {
+		monitor.Start("initiating auto redirect")
+		err = t.autoRedirect.Start(t.tunOptions.Name)
+		monitor.Finish()
+		if err != nil {
+			return E.Cause(err, "auto redirect")
+		}
 	}
 	t.logger.Info("started at ", t.tunOptions.Name)
 	for i, s := range t.scripts {
@@ -221,6 +245,7 @@ func (t *Tun) Close() error {
 	return common.Close(
 		t.tunStack,
 		t.tunIf,
+		common.PtrOrNil(t.autoRedirect),
 	)
 }
 
