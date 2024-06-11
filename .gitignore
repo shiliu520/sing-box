@@ -14,3 +14,7 @@
 /*.xcframework/
 .DS_Store
 /config.d/
+Dashboard/
+Yacd-meta-gh-pages/
+/*.zip
+/*.log
